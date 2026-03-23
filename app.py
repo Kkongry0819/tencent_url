@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, render_template
+from flask import Flask, request, jsonify, Response, render_template_string
 import requests
 import time
 import random
@@ -8,7 +8,33 @@ import base64
 
 app = Flask(__name__)
 
-cookie_str = ''
+cookie_str = os.getenv('QQMUSIC_COOKIE', '').strip()
+
+INDEX_TEMPLATE = """
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>QQ音乐无损解析</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; line-height: 1.6; }
+        .notice { padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; }
+        .notice.warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    {% if not cookie_configured %}
+    <div class="notice warning">当前服务未配置 QQ 音乐 Cookie，解析可能不可用</div>
+    {% endif %}
+
+    <h1>QQ音乐无损解析</h1>
+    <p>接口地址：<code>/song?url=QQ音乐歌曲链接</code></p>
+    <p>请将歌曲链接作为 <code>url</code> 参数传入进行解析。</p>
+</body>
+</html>
+"""
 
 class QQMusic:
     def __init__(self):
@@ -292,10 +318,9 @@ class QQMusic:
             print(f"Error fetching lyrics: {e}")
             return {'error': '无法获取歌词'}
 
-
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
-    return render_template('index.html')
+    return render_template_string(INDEX_TEMPLATE, cookie_configured=bool(cookie_str))
 
 @app.route('/song', methods=['GET'])
 def get_song():
@@ -303,11 +328,14 @@ def get_song():
     if not song_url:
         return jsonify({"error": "url parameter is required"}), 400
 
-    if not cookie_str.strip():
-        return jsonify({"error": "Cookie 未配置"}), 500
+    if not cookie_str:
+        return jsonify({"error": "服务端未配置 QQMUSIC_COOKIE"}), 400
 
     qqmusic = QQMusic()
-    qqmusic.set_cookies(cookie_str)
+    try:
+        qqmusic.set_cookies(cookie_str)
+    except Exception:
+        return jsonify({"error": "QQMUSIC_COOKIE 格式无效"}), 400
 
     # 从传入的 URL 中提取 songmid 或 songid
     songmid = qqmusic.ids(song_url)
