@@ -1,11 +1,10 @@
-from flask import Flask, Response, jsonify, render_template_string, request
-import base64
+from flask import Flask, request, jsonify, Response, render_template_string
+import requests
+import time
+import random
 import json
 import os
-import random
-import time
-
-import requests
+import base64
 
 app = Flask(__name__)
 
@@ -17,106 +16,25 @@ INDEX_TEMPLATE = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>QQ 音乐解析</title>
+    <title>QQ音乐无损解析</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 24px;
-            background: #f5f7fb;
-            color: #1f2937;
-        }
-        .container {
-            max-width: 860px;
-            margin: 0 auto;
-            background: #fff;
-            border-radius: 16px;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-            padding: 24px;
-        }
-        .notice {
-            padding: 14px 16px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-        .notice.warning {
-            background: #fff7ed;
-            color: #c2410c;
-            border: 1px solid #fdba74;
-        }
-        .notice.ok {
-            background: #ecfdf5;
-            color: #047857;
-            border: 1px solid #6ee7b7;
-        }
-        form {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin: 20px 0;
-        }
-        input {
-            flex: 1 1 480px;
-            padding: 12px 14px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            font-size: 16px;
-        }
-        button {
-            border: none;
-            background: #2563eb;
-            color: #fff;
-            padding: 12px 18px;
-            border-radius: 10px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        pre {
-            background: #0f172a;
-            color: #e2e8f0;
-            padding: 16px;
-            border-radius: 12px;
-            overflow: auto;
-            min-height: 160px;
-        }
-        .tip {
-            color: #4b5563;
-            line-height: 1.6;
-        }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; line-height: 1.6; }
+        .notice { padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; }
+        .notice.warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>QQ 音乐解析服务</h1>
-        <div class="notice {{ notice_class }}">{{ notice_message }}</div>
-        <p class="tip">输入 QQ 音乐歌曲链接后可直接调用当前服务的 <code>/song</code> 接口进行测试。</p>
-        <form id="song-form">
-            <input id="song-url" type="url" placeholder="请输入 QQ 音乐歌曲链接" required>
-            <button type="submit">开始解析</button>
-        </form>
-        <pre id="result">等待请求结果...</pre>
-    </div>
-    <script>
-        const form = document.getElementById('song-form');
-        const result = document.getElementById('result');
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const songUrl = document.getElementById('song-url').value.trim();
-            result.textContent = '请求中...';
-            try {
-                const response = await fetch(`/song?url=${encodeURIComponent(songUrl)}`);
-                const data = await response.json();
-                result.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                result.textContent = `请求失败: ${error}`;
-            }
-        });
-    </script>
+    {% if not cookie_configured %}
+    <div class="notice warning">当前服务未配置 QQ 音乐 Cookie，解析可能不可用</div>
+    {% endif %}
+
+    <h1>QQ音乐无损解析</h1>
+    <p>接口地址：<code>/song?url=QQ音乐歌曲链接</code></p>
+    <p>请将歌曲链接作为 <code>url</code> 参数传入进行解析。</p>
 </body>
 </html>
 """
-
 
 class QQMusic:
     def __init__(self):
@@ -134,13 +52,13 @@ class QQMusic:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
         }
         self.mac_headers = {
-            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'referer': 'https://i.y.qq.com',
-            'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1',
-            'content-type': 'application/json',
-            'accept': 'application/json',
-            'Host': 'u.y.qq.com',
-            'Connection': 'Keep-Alive'
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "referer": "https://i.y.qq.com",
+            "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+            "content-type": "application/json",
+            "accept": "application/json",
+            "Host": "u.y.qq.com",
+            "Connection": "Keep-Alive"
         }
         self.file_config = {
             '128': {'s': 'M500', 'e': '.mp3', 'bitrate': '128kbps'},
@@ -162,42 +80,35 @@ class QQMusic:
 
     def set_cookies(self, cookie_str):
         cookies = {}
-        for cookie in cookie_str.split(';'):
-            cookie = cookie.strip()
-            if not cookie:
-                continue
-            if '=' not in cookie:
-                raise ValueError('Cookie 项缺少等号分隔符')
+        for cookie in cookie_str.split('; '):
             key, value = cookie.split('=', 1)
-            key = key.strip()
-            value = value.strip()
-            if not key:
-                raise ValueError('Cookie 键不能为空')
             cookies[key] = value
-
-        if not cookies:
-            raise ValueError('未解析到有效 Cookie 项')
         self.cookies = cookies
 
     def ids(self, url):
         """
         从不同类型的 URL 中提取歌曲 ID，支持重定向和 /songDetail/ URL 形式
         """
+        # 如果URL中包含 'c6.y.qq.com'，则发送请求获取重定向后的URL
         if 'c6.y.qq.com' in url:
             response = requests.get(url, allow_redirects=False)
-            url = response.headers.get('Location')
+            url = response.headers.get('Location')  # 获取重定向的URL
 
+        # 检查重定向后的URL中是否包含 'y.qq.com'，并根据情况提取 id
         if 'y.qq.com' in url:
+            # 处理 /songDetail/ 形式的 URL
             if '/songDetail/' in url:
                 index = url.find('/songDetail/') + len('/songDetail/')
-                song_id = url[index:].split('/')[0]
+                song_id = url[index:].split('/')[0]  # 提取 '/songDetail/' 后面的部分
                 return song_id
-
+            
+            # 如果是带 id= 参数的 URL，提取 id 参数
             if 'id=' in url:
                 index = url.find('id=') + 3
-                song_id = url[index:].split('&')[0]
+                song_id = url[index:].split('&')[0]  # 提取 'id' 的值
                 return song_id
 
+        # 如果都不匹配，返回 None
         return None
 
     def get_music_url(self, songmid, file_type='flac'):
@@ -237,41 +148,50 @@ class QQMusic:
         data = response.json()
         purl = data['req_1']['data']['midurlinfo'][0]['purl']
         if purl == '':
+            # VIP
             return None
 
         url = data['req_1']['data']['sip'][1] + purl
         prefix = purl[:4]
         bitrate = next((info['bitrate'] for key, info in self.file_config.items() if info['s'] == prefix), '')
 
-        return {'url': url.replace('http://', 'https://'), 'bitrate': bitrate}
+        return {'url': url.replace("http://", "https://"), 'bitrate': bitrate}
 
     def get_music_song(self, mid, sid):
         """
         获取歌曲信息
         """
         if sid != 0:
+            # 如果有 songid（sid），使用 songid 进行请求
             req_data = {
                 'songid': sid,
                 'platform': 'yqq',
                 'format': 'json',
             }
         else:
+            # 如果没有 songid，使用 songmid 进行请求
             req_data = {
                 'songmid': mid,
                 'platform': 'yqq',
                 'format': 'json',
             }
 
+        # 发送请求并解析返回的 JSON 数据
         response = requests.post(self.song_url, data=req_data, cookies=self.cookies, headers=self.headers)
         data = response.json()
+        #return data
+        # 确保数据结构存在，避免索引错误
         if 'data' in data and len(data['data']) > 0:
             song_info = data['data'][0]
             album_info = song_info.get('album', {})
             singers = song_info.get('singer', [])
             singer_names = ', '.join([singer.get('name', 'Unknown') for singer in singers])
+
+            # 获取专辑封面图片 URL
             album_mid = album_info.get('mid')
             img_url = f'https://y.qq.com/music/photo_new/T002R800x800M000{album_mid}.jpg?max_age=2592000' if album_mid else 'https://axidiqolol53.objectstorage.ap-seoul-1.oci.customer-oci.com/n/axidiqolol53/b/lusic/o/resources/cover.jpg'
 
+            # 返回处理后的歌曲信息
             return {
                 'name': song_info.get('name', 'Unknown'),
                 'album': album_info.get('name', 'Unknown'),
@@ -280,34 +200,40 @@ class QQMusic:
                 'mid': song_info.get('mid', mid),
                 'id': song_info.get('id', sid)
             }
-        return {'msg': '信息获取错误/歌曲不存在'}
+        else:
+            return {'msg': '信息获取错误/歌曲不存在'}
 
     def get_music_lyric(self, mid):
         """
         获取歌曲歌词 - 旧版歌词接口
         """
+        # 构造请求 URL
         url = 'https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg'
         params = {
-            '_': str(int(time.time())),
+            '_': str(int(time.time())),  # 当前时间戳
             'format': 'json',
-            'loginUin': ''.join(random.sample('1234567890', 10)),
-            'songmid': mid
+            'loginUin': ''.join(random.sample('1234567890', 10)),  # 随机生成的登录 UIN
+            'songmid': mid  # 歌曲 MID
         }
 
         try:
+            # 发送 GET 请求获取歌词数据
             response = requests.get(url, headers=self._headers, cookies=self.cookies, params=params)
-            response.raise_for_status()
+            response.raise_for_status()  # 检查请求是否成功
             data = response.json()
             print(data)
+            # 从返回的 JSON 数据中获取歌词
             lyric = data.get('lyric', '')
             if lyric:
+                # 解码并返回歌词
                 return base64.b64decode(lyric).decode('utf-8')
-            return '未找到歌词'
+            else:
+                return "未找到歌词"
 
         except requests.RequestException as e:
-            return f'请求错误: {e}'
+            return f"请求错误: {e}"
         except Exception as e:
-            return f'解码错误: {e}'
+            return f"解码错误: {e}"
 
     def get_music_lyric_new(self, songid):
         """从QQ音乐电脑客户端接口获取歌词
@@ -320,119 +246,119 @@ class QQMusic:
 
             其中 lyric为原文歌词 trans为翻译歌词
         """
+        #url = "https://u.y.qq.com/cgi-bin/musicu.fcg"
         payload = {
-            'music.musichallSong.PlayLyricInfo.GetPlayLyricInfo': {
-                'module': 'music.musichallSong.PlayLyricInfo',
-                'method': 'GetPlayLyricInfo',
-                'param': {
-                    'trans_t': 0,
-                    'roma_t': 0,
-                    'crypt': 0,
-                    'lrc_t': 0,
-                    'interval': 208,
-                    'trans': 1,
-                    'ct': 6,
-                    'singerName': '',
-                    'type': 0,
-                    'qrc_t': 0,
-                    'cv': 80600,
-                    'roma': 1,
-                    'songID': songid,
-                    'qrc': 0,
-                    'albumName': '',
-                    'songName': '',
+            "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo": {
+                "module": "music.musichallSong.PlayLyricInfo",
+                "method": "GetPlayLyricInfo",
+                "param": {
+                    "trans_t": 0,
+                    "roma_t": 0,
+                    "crypt": 0,  # 1 define to encrypt
+                    "lrc_t": 0,
+                    "interval": 208,
+                    "trans": 1,
+                    "ct": 6,
+                    "singerName": "",
+                    "type": 0,
+                    "qrc_t": 0,
+                    "cv": 80600,
+                    "roma": 1,
+                    "songID": songid,
+                    "qrc": 0,  # 1 define base64 or compress Hex
+                    "albumName": "",
+                    "songName": "",
                 },
             },
-            'comm': {
-                'wid': '',
-                'tmeAppID': 'qqmusic',
-                'authst': '',
-                'uid': '',
-                'gray': '0',
-                'OpenUDID': '',
-                'ct': '6',
-                'patch': '2',
-                'psrf_qqopenid': '',
-                'sid': '',
-                'psrf_access_token_expiresAt': '',
-                'cv': '80600',
-                'gzip': '0',
-                'qq': '',
-                'nettype': '2',
-                'psrf_qqunionid': '',
-                'psrf_qqaccess_token': '',
-                'tmeLoginType': '2',
+            "comm": {
+                "wid": "",
+                "tmeAppID": "qqmusic",
+                "authst": "",
+                "uid": "",
+                "gray": "0",
+                "OpenUDID": "",
+                "ct": "6",
+                "patch": "2",
+                "psrf_qqopenid": "",
+                "sid": "",
+                "psrf_access_token_expiresAt": "",
+                "cv": "80600",
+                "gzip": "0",
+                "qq": "",
+                "nettype": "2",
+                "psrf_qqunionid": "",
+                "psrf_qqaccess_token": "",
+                "tmeLoginType": "2",
             },
         }
 
+        # 发送请求获取歌词
         try:
-            res = requests.post(self.base_url, json=payload, cookies=self.cookies, headers=self.headers)
-            res.raise_for_status()
-            d = res.json()
-            lyric_data = d['music.musichallSong.PlayLyricInfo.GetPlayLyricInfo']['data']
+            res = requests.post(self.base_url, json=payload, cookies=self.cookies, headers=self.headers)  # 确保使用 POST 请求
+            res.raise_for_status()  # 检查请求是否成功
+            d = res.json()  # 解析返回的 JSON 数据
+            
+            # 提取歌词数据
+            lyric_data = d["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"]["data"]
+            # 处理歌词内容
             if 'lyric' in lyric_data and lyric_data['lyric']:
+                # 解码歌词
                 lyric = base64.b64decode(lyric_data['lyric']).decode('utf-8')
                 tylyric = base64.b64decode(lyric_data['trans']).decode('utf-8')
             else:
-                lyric = ''
-                tylyric = ''
-            return {'lyric': lyric, 'tylyric': tylyric}
+                lyric = ''  # 没有歌词的情况下返回空字符串
+                tylyric = ''  # 没有歌词的情况下返回空字符串
+            return {'lyric': lyric,'tylyric': tylyric}  # 返回包含歌词的字典
 
         except Exception as e:
-            print(f'Error fetching lyrics: {e}')
+            print(f"Error fetching lyrics: {e}")
             return {'error': '无法获取歌词'}
-
 
 @app.route('/', methods=['GET'])
 def index():
-    cookie_configured = bool(cookie_str)
-    notice_message = (
-        '当前服务未配置 QQ 音乐 Cookie，解析可能不可用'
-        if not cookie_configured
-        else '当前服务已配置 QQ 音乐 Cookie，可以在此页面直接测试解析能力'
-    )
-    notice_class = 'warning' if not cookie_configured else 'ok'
-    return render_template_string(
-        INDEX_TEMPLATE,
-        notice_message=notice_message,
-        notice_class=notice_class,
-    )
-
+    return render_template_string(INDEX_TEMPLATE, cookie_configured=bool(cookie_str))
 
 @app.route('/song', methods=['GET'])
 def get_song():
     song_url = request.args.get('url')
     if not song_url:
-        return jsonify({'error': 'url parameter is required'}), 400
+        return jsonify({"error": "url parameter is required"}), 400
 
     if not cookie_str:
-        return jsonify({'error': '服务端未配置 QQMUSIC_COOKIE'}), 503
+        return jsonify({"error": "服务端未配置 QQMUSIC_COOKIE"}), 400
 
     qqmusic = QQMusic()
     try:
         qqmusic.set_cookies(cookie_str)
-    except ValueError as exc:
-        return jsonify({'error': 'QQMUSIC_COOKIE 配置无效', 'detail': str(exc)}), 400
+    except Exception:
+        return jsonify({"error": "QQMUSIC_COOKIE 格式无效"}), 400
 
+    # 从传入的 URL 中提取 songmid 或 songid
     songmid = qqmusic.ids(song_url)
-    file_types = ['aac_48', 'aac_96', 'aac_192', 'ogg_96', 'ogg_192', 'ogg_320', 'ogg_640', 'atmos_51', 'atmos_2', 'master', 'flac', '320', '128']
+
+    # 文件类型处理
+    file_types = ['aac_48','aac_96','aac_192','ogg_96','ogg_192','ogg_320','ogg_640','atmos_51','atmos_2','master','flac','320','128']
     results = {}
 
     try:
+        # 如果 songmid 是数字，视为 songid (sid)
         sid = int(songmid)
         mid = 0
-    except (TypeError, ValueError):
+    except ValueError:
+        # 否则视为 songmid (mid)
         sid = 0
         mid = songmid
-
+    # 获取歌曲信息
     info = qqmusic.get_music_song(mid, sid)
+    # 对于每种文件类型，获取对应的音乐 URL
     for file_type in file_types:
         result = qqmusic.get_music_url(info['mid'], file_type)
         if result:
             results[file_type] = result
         time.sleep(0.1)
-    lyric = qqmusic.get_music_lyric_new(info['id'])
+    lyric =  qqmusic.get_music_lyric_new(info['id'])
 
+    # 构造 JSON 输出
     output = {
         'song': info,
         'lyric': lyric,
@@ -440,7 +366,6 @@ def get_song():
     }
     json_data = json.dumps(output)
     return Response(json_data, content_type='application/json')
-
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5122)
