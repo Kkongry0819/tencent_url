@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify ,Response
+from flask import Flask, request, jsonify, Response, render_template
 import requests
 import time
 import random
@@ -54,6 +54,10 @@ class QQMusic:
 
     def set_cookies(self, cookie_str):
         cookies = {}
+        if not cookie_str or not cookie_str.strip():
+            self.cookies = cookies
+            return
+
         for cookie in cookie_str.split('; '):
             key, value = cookie.split('=', 1)
             cookies[key] = value
@@ -288,17 +292,27 @@ class QQMusic:
             print(f"Error fetching lyrics: {e}")
             return {'error': '无法获取歌词'}
 
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 @app.route('/song', methods=['GET'])
 def get_song():
     song_url = request.args.get('url')
     if not song_url:
         return jsonify({"error": "url parameter is required"}), 400
 
+    if not cookie_str.strip():
+        return jsonify({"error": "Cookie 未配置"}), 500
+
     qqmusic = QQMusic()
     qqmusic.set_cookies(cookie_str)
 
     # 从传入的 URL 中提取 songmid 或 songid
     songmid = qqmusic.ids(song_url)
+    if not songmid:
+        return jsonify({"error": "解析失败"}), 400
 
     # 文件类型处理
     file_types = ['aac_48','aac_96','aac_192','ogg_96','ogg_192','ogg_320','ogg_640','atmos_51','atmos_2','master','flac','320','128']
@@ -308,7 +322,7 @@ def get_song():
         # 如果 songmid 是数字，视为 songid (sid)
         sid = int(songmid)
         mid = 0
-    except ValueError:
+    except (TypeError, ValueError):
         # 否则视为 songmid (mid)
         sid = 0
         mid = songmid
