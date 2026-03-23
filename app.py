@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, render_template_string
+from flask import Flask, request, jsonify, render_template_string
 import requests
 import time
 import random
@@ -148,18 +148,31 @@ class QQMusic:
             },
         }
 
-        response = requests.post(self.base_url, json=req_data, cookies=self.cookies, headers=self.headers)
-        data = response.json()
-        purl = data['req_1']['data']['midurlinfo'][0]['purl']
-        if purl == '':
-            # VIP
+        try:
+            response = requests.post(
+                self.base_url,
+                json=req_data,
+                cookies=self.cookies,
+                headers=self.headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            req_1_data = data.get('req_1', {}).get('data', {})
+            midurlinfo = req_1_data.get('midurlinfo') or []
+            purl = midurlinfo[0].get('purl') if midurlinfo else ''
+            sip_list = req_1_data.get('sip') or []
+
+            if not purl or len(sip_list) < 2:
+                # VIP、字段缺失或接口未返回可用链接时统一视为不可用
+                return None
+
+            url = sip_list[1] + purl
+            prefix = purl[:4]
+            bitrate = next((info['bitrate'] for key, info in self.file_config.items() if info['s'] == prefix), '')
+            return {'url': url.replace("http://", "https://"), 'bitrate': bitrate}
+        except (requests.RequestException, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError):
             return None
-
-        url = data['req_1']['data']['sip'][1] + purl
-        prefix = purl[:4]
-        bitrate = next((info['bitrate'] for key, info in self.file_config.items() if info['s'] == prefix), '')
-
-        return {'url': url.replace("http://", "https://"), 'bitrate': bitrate}
 
     def get_music_song(self, mid, sid):
         """
@@ -303,20 +316,38 @@ class QQMusic:
             d = res.json()  # 解析返回的 JSON 数据
             
             # 提取歌词数据
-            lyric_data = d["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"]["data"]
-            # 处理歌词内容
-            if 'lyric' in lyric_data and lyric_data['lyric']:
-                # 解码歌词
-                lyric = base64.b64decode(lyric_data['lyric']).decode('utf-8')
-                tylyric = base64.b64decode(lyric_data['trans']).decode('utf-8')
-            else:
-                lyric = ''  # 没有歌词的情况下返回空字符串
-                tylyric = ''  # 没有歌词的情况下返回空字符串
+            lyric_data = d.get("music.musichallSong.PlayLyricInfo.GetPlayLyricInfo", {}).get("data", {})
+            lyric_b64 = lyric_data.get('lyric') or ''
+            trans_b64 = lyric_data.get('trans') or ''
+
+            lyric = ''
+            tylyric = ''
+
+            if lyric_b64:
+                lyric = base64.b64decode(lyric_b64).decode('utf-8')
+            if trans_b64:
+                tylyric = base64.b64decode(trans_b64).decode('utf-8')
             return {'lyric': lyric,'tylyric': tylyric}  # 返回包含歌词的字典
 
         except Exception as e:
             print(f"Error fetching lyrics: {e}")
             return {'error': '无法获取歌词'}
+
+
+def success_response(song, lyric, music_urls, status_code=200):
+    return jsonify({
+        'success': True,
+        'song': song,
+        'lyric': lyric,
+        'music_urls': music_urls,
+    }), status_code
+
+
+def error_response(message, status_code=400):
+    return jsonify({
+        'success': False,
+        'error': message,
+    }), status_code
 
 @app.route('/', methods=['GET'])
 def index():
@@ -326,21 +357,21 @@ def index():
 def get_song():
     song_url = request.args.get('url')
     if not song_url:
-        return jsonify({"error": "url parameter is required"}), 400
+        return error_response("url parameter is required", 400)
 
     if not cookie_str:
-        return jsonify({"error": "服务端未配置 QQMUSIC_COOKIE"}), 400
+        return error_response("服务端未配置 QQMUSIC_COOKIE", 400)
 
     qqmusic = QQMusic()
     try:
         qqmusic.set_cookies(cookie_str)
     except Exception:
-        return jsonify({"error": "QQMUSIC_COOKIE 格式无效"}), 400
+        return error_response("QQMUSIC_COOKIE 格式无效", 400)
 
     # 从传入的 URL 中提取 songmid 或 songid
     songmid = qqmusic.ids(song_url)
     if not songmid:
-        return jsonify({"error": "解析失败"}), 400
+        return error_response("解析失败，未识别到歌曲 ID", 400)
 
     # 文件类型处理
     file_types = ['aac_48','aac_96','aac_192','ogg_96','ogg_192','ogg_320','ogg_640','atmos_51','atmos_2','master','flac','320','128']
@@ -355,23 +386,33 @@ def get_song():
         sid = 0
         mid = songmid
     # 获取歌曲信息
-    info = qqmusic.get_music_song(mid, sid)
+    try:
+        info = qqmusic.get_music_song(mid, sid)
+    except (requests.RequestException, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return error_response("歌曲信息获取失败", 502)
+
+    if not isinstance(info, dict):
+        return error_response("歌曲信息获取失败", 502)
+
+    if info.get('msg'):
+        return error_response(info['msg'], 404)
+
+    resolved_mid = info.get('mid')
+    resolved_song_id = info.get('id')
+    if not resolved_mid or resolved_song_id in (None, ''):
+        return error_response("歌曲信息不完整", 502)
+
     # 对于每种文件类型，获取对应的音乐 URL
     for file_type in file_types:
-        result = qqmusic.get_music_url(info['mid'], file_type)
+        result = qqmusic.get_music_url(resolved_mid, file_type)
         if result:
             results[file_type] = result
         time.sleep(0.1)
-    lyric =  qqmusic.get_music_lyric_new(info['id'])
+    lyric = qqmusic.get_music_lyric_new(resolved_song_id)
+    if not isinstance(lyric, dict):
+        lyric = {'error': '无法获取歌词'}
 
-    # 构造 JSON 输出
-    output = {
-        'song': info,
-        'lyric': lyric,
-        'music_urls': results,
-    }
-    json_data = json.dumps(output)
-    return Response(json_data, content_type='application/json')
+    return success_response(info, lyric, results)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5122)

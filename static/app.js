@@ -86,8 +86,8 @@ function resolveErrorMessage(data, status) {
   if (data?.error) {
     return data.error;
   }
-  if (data?.song?.msg) {
-    return data.song.msg;
+  if (data?.success === false) {
+    return data.error || '解析失败，请检查链接是否有效或稍后重试。';
   }
   if (status === 400) {
     return 'url parameter is required';
@@ -118,8 +118,8 @@ form.addEventListener('submit', async (event) => {
       return;
     }
 
-    if (data?.song?.msg) {
-      showError(data.song.msg);
+    if (data?.success === false) {
+      showError(resolveErrorMessage(data, response.status));
       return;
     }
 
