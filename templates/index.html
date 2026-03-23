@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QQ 音乐链接解析</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="page">
+        <section class="panel form-panel">
+            <div>
+                <p class="eyebrow">QQ 音乐分享链接解析</p>
+                <h1>输入链接，查看歌曲信息与可用音质</h1>
+                <p class="description">粘贴 QQ 音乐分享链接后，页面会调用现有 <code>/song</code> 接口返回歌曲信息、歌词和音质链接。</p>
+            </div>
+            <form id="song-form" class="song-form">
+                <label for="song-url" class="input-label">QQ 音乐分享链接</label>
+                <div class="input-row">
+                    <input id="song-url" name="url" type="url" placeholder="https://i.y.qq.com/v8/playsong.html?..." required>
+                    <button id="submit-button" type="submit">开始解析</button>
+                </div>
+            </form>
+            <div id="error-message" class="error-message" role="alert" hidden></div>
+        </section>
+
+        <section id="result-panel" class="panel result-panel" hidden>
+            <div class="result-grid">
+                <article class="card song-card">
+                    <h2>歌曲信息</h2>
+                    <div class="song-summary">
+                        <img id="song-cover" class="song-cover" src="" alt="歌曲封面">
+                        <div>
+                            <p><strong>歌曲：</strong><span id="song-name">-</span></p>
+                            <p><strong>歌手：</strong><span id="song-singer">-</span></p>
+                            <p><strong>专辑：</strong><span id="song-album">-</span></p>
+                            <p><strong>MID：</strong><span id="song-mid">-</span></p>
+                            <p><strong>ID：</strong><span id="song-id">-</span></p>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="card link-card">
+                    <h2>可用音质链接</h2>
+                    <ul id="quality-list" class="quality-list"></ul>
+                </article>
+            </div>
+
+            <article class="card lyric-card">
+                <h2>歌词</h2>
+                <pre id="lyric-content" class="lyric-content">暂无歌词</pre>
+            </article>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
