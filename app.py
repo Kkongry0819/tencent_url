@@ -32,6 +32,17 @@ INDEX_TEMPLATE = """
     <h1>QQ音乐无损解析</h1>
     <p>接口地址：<code>/song?url=QQ音乐歌曲链接</code></p>
     <p>请将歌曲链接作为 <code>url</code> 参数传入进行解析。</p>
+
+    <form id="song-form" action="/song" method="get">
+        <label for="song-url">歌曲链接</label>
+        <input id="song-url" name="url" type="url" placeholder="请输入 QQ 音乐歌曲链接">
+        <button id="parse-button" type="submit">解析歌曲</button>
+    </form>
+
+    <section id="result-area" aria-live="polite">
+        <h2>解析结果</h2>
+        <p>结果将在此区域展示。</p>
+    </section>
 </body>
 </html>
 """
